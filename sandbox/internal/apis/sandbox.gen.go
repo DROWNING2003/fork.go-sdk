@@ -298,11 +298,14 @@ type GeneralRegistryType string
 // The platform materializes a cached snapshot of the repository for mounting.
 // The first snapshot is cloned from the repository default branch HEAD. Subsequent sandboxes reuse the cached snapshot, and the platform refreshes it to the latest default-branch HEAD on a best-effort schedule: a soft TTL triggers a background refresh (the triggering request keeps using the stale snapshot, but later requests that arrive while the refresh is in flight wait for it to complete), and a hard TTL forces the next request to block on a synchronous refresh.
 type GitRepositoryResource struct {
-	// AuthorizationToken GitHub token used to access this repository. All GitHub repository resources in a single sandbox must currently use the same token.
+	// AuthorizationToken GitHub token used to access this repository. Every repository Resource must provide its own token.
 	AuthorizationToken *string `json:"authorization_token,omitempty"`
 
 	// MountPath Absolute path where the repository contents should appear inside the sandbox
 	MountPath string `json:"mount_path"`
+
+	// ResourceID Opaque server-generated short identifier for this Resource, using the res prefix. It remains unchanged when the Sandbox is paused and resumed.
+	ResourceID *string `json:"resource_id,omitempty"`
 
 	// Type Resource type identifier
 	Type GitRepositoryResourceType `json:"type"`
@@ -394,8 +397,11 @@ type InjectionRule struct {
 // KodoResource Kodo bucket resource mounted into the sandbox via NFS.
 // The platform creates an NFS-backed proxy that maps the Kodo bucket to a local path inside the sandbox.
 // Credentials (access_key/secret_key) are never exposed inside the sandbox.
-// Note: Kodo resources require access key authentication. API key authentication is not supported.
+// The access key and secret key may be supplied in the Resource itself or through the authenticated Qiniu credential context.
 type KodoResource struct {
+	// AccessKey Kodo access key. Optional when supplied through the authenticated Qiniu credential context.
+	AccessKey *string `json:"access_key,omitempty"`
+
 	// Bucket Kodo bucket name
 	Bucket string `json:"bucket"`
 
@@ -407,6 +413,12 @@ type KodoResource struct {
 
 	// ReadOnly Whether the mount is read-only. Automatically set to true when AK/SK lacks write permission. Can also be set explicitly.
 	ReadOnly *bool `json:"read_only,omitempty"`
+
+	// ResourceID Opaque server-generated identifier for this Resource. It remains unchanged when the Sandbox is paused and resumed.
+	ResourceID *string `json:"resource_id,omitempty"`
+
+	// SecretKey Kodo secret key. Optional when supplied through the authenticated Qiniu credential context.
+	SecretKey *string `json:"secret_key,omitempty"`
 
 	// Type Resource type identifier
 	Type KodoResourceType `json:"type"`
@@ -559,6 +571,12 @@ type QiniuInjection struct {
 
 // QiniuInjectionType Injection type identifier
 type QiniuInjectionType string
+
+// ResourcePatch Update a GitHub Resource's authorization token. Kodo Resource updates are not supported.
+type ResourcePatch struct {
+	// AuthorizationToken New GitHub authorization token. This is currently the only supported Resource update.
+	AuthorizationToken *string `json:"authorization_token,omitempty"`
+}
 
 // ResumedSandbox defines model for ResumedSandbox.
 type ResumedSandbox struct {
@@ -839,6 +857,9 @@ type TemplateBuild struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// TemplateBuildDiskSizeMB Disk size for a template build in MiB; must be at least 10240 MiB
+type TemplateBuildDiskSizeMB = int32
+
 // TemplateBuildFileUpload defines model for TemplateBuildFileUpload.
 type TemplateBuildFileUpload struct {
 	// Present Whether the file is already present in the cache
@@ -921,6 +942,9 @@ type TemplateBuildRequestV3 struct {
 
 	// CPUCount CPU cores for the sandbox
 	CPUCount *CPUCount `json:"cpuCount,omitempty"`
+
+	// DiskSizeMB Disk size for a template build in MiB; must be at least 10240 MiB
+	DiskSizeMB *TemplateBuildDiskSizeMB `json:"diskSizeMB,omitempty"`
 
 	// MemoryMB Memory for the sandbox in MiB
 	MemoryMB *MemoryMB `json:"memoryMB,omitempty"`
@@ -1259,6 +1283,9 @@ type UpdateSandboxInjectionsJSONRequestBody UpdateSandboxInjectionsJSONBody
 
 // RefreshSandboxJSONRequestBody defines body for RefreshSandbox for application/json ContentType.
 type RefreshSandboxJSONRequestBody RefreshSandboxJSONBody
+
+// PatchSandboxResourceJSONRequestBody defines body for PatchSandboxResource for application/json ContentType.
+type PatchSandboxResourceJSONRequestBody = ResourcePatch
 
 // ResumeSandboxJSONRequestBody defines body for ResumeSandbox for application/json ContentType.
 type ResumeSandboxJSONRequestBody = ResumedSandbox
@@ -2090,6 +2117,14 @@ type ClientInterface interface {
 
 	RefreshSandbox(ctx context.Context, sandboxID SandboxID, body RefreshSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSandboxResources request
+	GetSandboxResources(ctx context.Context, sandboxID SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchSandboxResourceWithBody request with any body
+	PatchSandboxResourceWithBody(ctx context.Context, sandboxID SandboxID, resourceID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PatchSandboxResource(ctx context.Context, sandboxID SandboxID, resourceID string, body PatchSandboxResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ResumeSandboxWithBody request with any body
 	ResumeSandboxWithBody(ctx context.Context, sandboxID SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2470,6 +2505,42 @@ func (c *Client) RefreshSandboxWithBody(ctx context.Context, sandboxID SandboxID
 
 func (c *Client) RefreshSandbox(ctx context.Context, sandboxID SandboxID, body RefreshSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRefreshSandboxRequest(c.Server, sandboxID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSandboxResources(ctx context.Context, sandboxID SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSandboxResourcesRequest(c.Server, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchSandboxResourceWithBody(ctx context.Context, sandboxID SandboxID, resourceID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchSandboxResourceRequestWithBody(c.Server, sandboxID, resourceID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchSandboxResource(ctx context.Context, sandboxID SandboxID, resourceID string, body PatchSandboxResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchSandboxResourceRequest(c.Server, sandboxID, resourceID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3654,6 +3725,94 @@ func NewRefreshSandboxRequestWithBody(server string, sandboxID SandboxID, conten
 	return req, nil
 }
 
+// NewGetSandboxResourcesRequest generates requests for GetSandboxResources
+func NewGetSandboxResourcesRequest(server string, sandboxID SandboxID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "sandboxID", runtime.ParamLocationPath, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sandboxes/%s/resources", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPatchSandboxResourceRequest calls the generic PatchSandboxResource builder with application/json body
+func NewPatchSandboxResourceRequest(server string, sandboxID SandboxID, resourceID string, body PatchSandboxResourceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchSandboxResourceRequestWithBody(server, sandboxID, resourceID, "application/json", bodyReader)
+}
+
+// NewPatchSandboxResourceRequestWithBody generates requests for PatchSandboxResource with any type of body
+func NewPatchSandboxResourceRequestWithBody(server string, sandboxID SandboxID, resourceID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "sandboxID", runtime.ParamLocationPath, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "resourceID", runtime.ParamLocationPath, resourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sandboxes/%s/resources/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewResumeSandboxRequest calls the generic ResumeSandbox builder with application/json body
 func NewResumeSandboxRequest(server string, sandboxID SandboxID, body ResumeSandboxJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -4816,6 +4975,14 @@ type ClientWithResponsesInterface interface {
 
 	RefreshSandboxWithResponse(ctx context.Context, sandboxID SandboxID, body RefreshSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*RefreshSandboxResponse, error)
 
+	// GetSandboxResourcesWithResponse request
+	GetSandboxResourcesWithResponse(ctx context.Context, sandboxID SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxResourcesResponse, error)
+
+	// PatchSandboxResourceWithBodyWithResponse request with any body
+	PatchSandboxResourceWithBodyWithResponse(ctx context.Context, sandboxID SandboxID, resourceID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchSandboxResourceResponse, error)
+
+	PatchSandboxResourceWithResponse(ctx context.Context, sandboxID SandboxID, resourceID string, body PatchSandboxResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchSandboxResourceResponse, error)
+
 	// ResumeSandboxWithBodyWithResponse request with any body
 	ResumeSandboxWithBodyWithResponse(ctx context.Context, sandboxID SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResumeSandboxResponse, error)
 
@@ -5367,6 +5534,58 @@ func (r RefreshSandboxResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r RefreshSandboxResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSandboxResourcesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		Resources []SandboxResource `json:"resources"`
+	}
+	JSON401 *N401
+	JSON404 *N404
+	JSON500 *N500
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSandboxResourcesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSandboxResourcesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PatchSandboxResourceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *N400
+	JSON401      *N401
+	JSON404      *N404
+	JSON500      *N500
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchSandboxResourceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchSandboxResourceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -6066,6 +6285,32 @@ func (c *ClientWithResponses) RefreshSandboxWithResponse(ctx context.Context, sa
 		return nil, err
 	}
 	return ParseRefreshSandboxResponse(rsp)
+}
+
+// GetSandboxResourcesWithResponse request returning *GetSandboxResourcesResponse
+func (c *ClientWithResponses) GetSandboxResourcesWithResponse(ctx context.Context, sandboxID SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxResourcesResponse, error) {
+	rsp, err := c.GetSandboxResources(ctx, sandboxID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSandboxResourcesResponse(rsp)
+}
+
+// PatchSandboxResourceWithBodyWithResponse request with arbitrary body returning *PatchSandboxResourceResponse
+func (c *ClientWithResponses) PatchSandboxResourceWithBodyWithResponse(ctx context.Context, sandboxID SandboxID, resourceID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchSandboxResourceResponse, error) {
+	rsp, err := c.PatchSandboxResourceWithBody(ctx, sandboxID, resourceID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchSandboxResourceResponse(rsp)
+}
+
+func (c *ClientWithResponses) PatchSandboxResourceWithResponse(ctx context.Context, sandboxID SandboxID, resourceID string, body PatchSandboxResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchSandboxResourceResponse, error) {
+	rsp, err := c.PatchSandboxResource(ctx, sandboxID, resourceID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchSandboxResourceResponse(rsp)
 }
 
 // ResumeSandboxWithBodyWithResponse request with arbitrary body returning *ResumeSandboxResponse
@@ -7222,6 +7467,102 @@ func ParseRefreshSandboxResponse(rsp *http.Response) (*RefreshSandboxResponse, e
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSandboxResourcesResponse parses an HTTP response from a GetSandboxResourcesWithResponse call
+func ParseGetSandboxResourcesResponse(rsp *http.Response) (*GetSandboxResourcesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSandboxResourcesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Resources []SandboxResource `json:"resources"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest N401
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest N500
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePatchSandboxResourceResponse parses an HTTP response from a PatchSandboxResourceWithResponse call
+func ParsePatchSandboxResourceResponse(rsp *http.Response) (*PatchSandboxResourceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchSandboxResourceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest N401
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest N500
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
 
 	}
 

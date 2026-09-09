@@ -312,6 +312,34 @@ func (s *Sandbox) UpdateGitHubToken(ctx context.Context, authorizationToken stri
 	return nil
 }
 
+// GetResources 返回沙箱已挂载的资源配置。
+// 响应中的访问密钥和授权令牌等敏感字段由服务端脱敏。
+func (s *Sandbox) GetResources(ctx context.Context) ([]MaskedSandboxResource, error) {
+	resp, err := s.client.api.GetSandboxResourcesWithResponse(ctx, s.sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		return nil, newAPIError(resp.HTTPResponse, resp.Body)
+	}
+	return maskedSandboxResourcesFromAPI(resp.JSON200.Resources)
+}
+
+// UpdateGitRepositoryResourceToken 更新指定 Git 仓库资源的授权令牌。
+// 对正在运行的沙箱，新令牌会立即应用到对应的 GitHub 注入配置。
+func (s *Sandbox) UpdateGitRepositoryResourceToken(ctx context.Context, resourceID, authorizationToken string) error {
+	resp, err := s.client.api.PatchSandboxResourceWithResponse(ctx, s.sandboxID, resourceID, apis.PatchSandboxResourceJSONRequestBody{
+		AuthorizationToken: &authorizationToken,
+	})
+	if err != nil {
+		return err
+	}
+	if resp.HTTPResponse.StatusCode != http.StatusNoContent {
+		return newAPIError(resp.HTTPResponse, resp.Body)
+	}
+	return nil
+}
+
 // Kill 终止沙箱。
 func (s *Sandbox) Kill(ctx context.Context) error {
 	resp, err := s.client.api.DeleteSandboxWithResponse(ctx, s.sandboxID)
