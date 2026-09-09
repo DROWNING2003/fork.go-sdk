@@ -101,7 +101,7 @@ func TestSandboxResourceSpecToAPIKodoResourceValidation(t *testing.T) {
 	}
 }
 
-func TestMaskedSandboxResourceFromAPIKodoResource(t *testing.T) {
+func TestSandboxResourceInfoFromAPIKodoResource(t *testing.T) {
 	resourceID := "res_kodo"
 	prefix := "datasets/"
 	readOnly := true
@@ -116,12 +116,12 @@ func TestMaskedSandboxResourceFromAPIKodoResource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	masked, err := maskedSandboxResourceFromAPI(resource)
+	info, err := sandboxResourceInfoFromAPI(resource)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if masked.Kodo == nil || masked.Kodo.ResourceID != resourceID || masked.Kodo.Bucket != "test-bucket" || masked.Kodo.Prefix == nil || *masked.Kodo.Prefix != prefix || masked.Kodo.ReadOnly == nil || *masked.Kodo.ReadOnly != readOnly {
-		t.Fatalf("unexpected masked Kodo resource: %#v", masked.Kodo)
+	if info.Kodo == nil || info.Kodo.ResourceID != resourceID || info.Kodo.Bucket != "test-bucket" || info.Kodo.Prefix == nil || *info.Kodo.Prefix != prefix || info.Kodo.ReadOnly == nil || *info.Kodo.ReadOnly != readOnly {
+		t.Fatalf("unexpected Kodo resource info: %#v", info.Kodo)
 	}
 }
 

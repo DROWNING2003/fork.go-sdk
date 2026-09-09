@@ -314,7 +314,7 @@ func (s *Sandbox) UpdateGitHubToken(ctx context.Context, authorizationToken stri
 
 // GetResources 返回沙箱已挂载的资源配置。
 // 响应中的访问密钥和授权令牌等敏感字段由服务端脱敏。
-func (s *Sandbox) GetResources(ctx context.Context) ([]MaskedSandboxResource, error) {
+func (s *Sandbox) GetResources(ctx context.Context) ([]SandboxResourceInfo, error) {
 	resp, err := s.client.api.GetSandboxResourcesWithResponse(ctx, s.sandboxID)
 	if err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func (s *Sandbox) GetResources(ctx context.Context) ([]MaskedSandboxResource, er
 	if resp.JSON200 == nil {
 		return nil, newAPIError(resp.HTTPResponse, resp.Body)
 	}
-	return maskedSandboxResourcesFromAPI(resp.JSON200.Resources)
+	return sandboxResourceInfosFromAPI(resp.JSON200.Resources)
 }
 
 // UpdateGitRepositoryResourceToken 更新指定 Git 仓库资源的授权令牌。

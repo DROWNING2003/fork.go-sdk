@@ -66,8 +66,8 @@ type SandboxResourceSpec struct {
 	Kodo *KodoResource
 }
 
-// MaskedGitRepositoryResource 是查询到的 Git 仓库资源，不包含授权令牌。
-type MaskedGitRepositoryResource struct {
+// GitRepositoryResourceInfo 是查询到的 Git 仓库资源，不包含授权令牌。
+type GitRepositoryResourceInfo struct {
 	// ResourceID 服务端生成的资源 ID。
 	ResourceID string
 
@@ -81,8 +81,8 @@ type MaskedGitRepositoryResource struct {
 	MountPath string
 }
 
-// MaskedKodoResource 是查询到的 Kodo 存储桶资源，不包含访问凭证。
-type MaskedKodoResource struct {
+// KodoResourceInfo 是查询到的 Kodo 存储桶资源，不包含访问凭证。
+type KodoResourceInfo struct {
 	// ResourceID 服务端生成的资源 ID。
 	ResourceID string
 
@@ -99,13 +99,13 @@ type MaskedKodoResource struct {
 	ReadOnly *bool
 }
 
-// MaskedSandboxResource 是查询到的沙箱资源。凭证字段由服务端脱敏，不会出现在返回值中。
-type MaskedSandboxResource struct {
+// SandboxResourceInfo 是查询到的沙箱资源。凭证字段不会出现在返回值中。
+type SandboxResourceInfo struct {
 	// GitRepository Git 仓库资源。
-	GitRepository *MaskedGitRepositoryResource
+	GitRepository *GitRepositoryResourceInfo
 
 	// Kodo Kodo 存储桶资源。
-	Kodo *MaskedKodoResource
+	Kodo *KodoResourceInfo
 }
 
 // ---------------------------------------------------------------------------
@@ -179,18 +179,18 @@ func sandboxResourceSpecToAPI(spec SandboxResourceSpec) (apis.SandboxResource, e
 	return r, nil
 }
 
-func maskedSandboxResourceFromAPI(resource apis.SandboxResource) (MaskedSandboxResource, error) {
+func sandboxResourceInfoFromAPI(resource apis.SandboxResource) (SandboxResourceInfo, error) {
 	discriminator, err := resource.Discriminator()
 	if err != nil {
-		return MaskedSandboxResource{}, err
+		return SandboxResourceInfo{}, err
 	}
 	switch discriminator {
 	case string(apis.GithubRepository):
 		value, err := resource.AsGitRepositoryResource()
 		if err != nil {
-			return MaskedSandboxResource{}, err
+			return SandboxResourceInfo{}, err
 		}
-		return MaskedSandboxResource{GitRepository: &MaskedGitRepositoryResource{
+		return SandboxResourceInfo{GitRepository: &GitRepositoryResourceInfo{
 			ResourceID: derefString(value.ResourceID),
 			Type:       GitRepositoryType(value.Type),
 			URL:        value.URL,
@@ -199,9 +199,9 @@ func maskedSandboxResourceFromAPI(resource apis.SandboxResource) (MaskedSandboxR
 	case string(apis.Kodo):
 		value, err := resource.AsKodoResource()
 		if err != nil {
-			return MaskedSandboxResource{}, err
+			return SandboxResourceInfo{}, err
 		}
-		return MaskedSandboxResource{Kodo: &MaskedKodoResource{
+		return SandboxResourceInfo{Kodo: &KodoResourceInfo{
 			ResourceID: derefString(value.ResourceID),
 			Bucket:     value.Bucket,
 			MountPath:  value.MountPath,
@@ -209,21 +209,21 @@ func maskedSandboxResourceFromAPI(resource apis.SandboxResource) (MaskedSandboxR
 			ReadOnly:   value.ReadOnly,
 		}}, nil
 	default:
-		return MaskedSandboxResource{}, fmt.Errorf("unknown sandbox resource type: %s", discriminator)
+		return SandboxResourceInfo{}, fmt.Errorf("unknown sandbox resource type: %s", discriminator)
 	}
 }
 
-func maskedSandboxResourcesFromAPI(resources []apis.SandboxResource) ([]MaskedSandboxResource, error) {
+func sandboxResourceInfosFromAPI(resources []apis.SandboxResource) ([]SandboxResourceInfo, error) {
 	if resources == nil {
 		return nil, nil
 	}
-	result := make([]MaskedSandboxResource, len(resources))
+	result := make([]SandboxResourceInfo, len(resources))
 	for i, resource := range resources {
-		masked, err := maskedSandboxResourceFromAPI(resource)
+		info, err := sandboxResourceInfoFromAPI(resource)
 		if err != nil {
 			return nil, err
 		}
-		result[i] = masked
+		result[i] = info
 	}
 	return result, nil
 }

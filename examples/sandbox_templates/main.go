@@ -97,18 +97,20 @@ func main() {
 	fmt.Println("\n=== 创建模板 ===")
 	cpuCount := int32(2)
 	memoryMB := int32(512)
+	diskSizeMB := int32(15360)
 	templateName := "sdk-example-template"
 	resp, err := c.CreateTemplate(ctx, sandbox.CreateTemplateParams{
-		Name:     &templateName,
-		CPUCount: &cpuCount,
-		MemoryMB: &memoryMB,
+		Name:       &templateName,
+		CPUCount:   &cpuCount,
+		MemoryMB:   &memoryMB,
+		DiskSizeMB: &diskSizeMB,
 	})
 	if err != nil {
 		log.Fatalf("创建模板失败: %v", err)
 	}
 	templateID := resp.TemplateID
 	buildID := resp.BuildID
-	fmt.Printf("模板已创建: %s (构建: %s)\n", templateID, buildID)
+	fmt.Printf("模板已创建: %s (构建: %s，磁盘: %d MiB)\n", templateID, buildID, diskSizeMB)
 
 	// 确保测试结束时清理
 	defer func() {
@@ -222,6 +224,24 @@ func main() {
 	finalBuild, err := c.WaitForBuild(ctx, templateID, buildID, sandbox.WithPollInterval(3*time.Second))
 	if err != nil {
 		fmt.Printf("等待构建完成失败: %v\n", err)
+
+		// 在 defer 删除模板前读取完整日志，以便定位服务端构建失败原因。
+		fmt.Println("\n=== 失败构建日志 ===")
+		logCtx, cancelLogs := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelLogs()
+		buildLogs, logErr := c.GetTemplateBuildLogs(logCtx, templateID, buildID, nil)
+		if logErr != nil {
+			fmt.Printf("获取失败构建日志失败: %v\n", logErr)
+		} else {
+			for _, entry := range buildLogs.Logs {
+				step := "-"
+				if entry.Step != nil {
+					step = *entry.Step
+				}
+				fmt.Printf("  [%s] [%s] %s: %s\n",
+					entry.Timestamp.Format(time.RFC3339), entry.Level, step, entry.Message)
+			}
+		}
 	} else {
 		fmt.Printf("构建已完成: %s (状态: %s)\n", finalBuild.BuildID, finalBuild.Status)
 	}
