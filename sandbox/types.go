@@ -82,7 +82,7 @@ func (p CreateParams) hasKodoResource() bool {
 		return false
 	}
 	for _, resource := range *p.Resources {
-		if resource.Kodo != nil {
+		if resource.Kodo != nil && resource.Kodo.AccessKey == nil && resource.Kodo.SecretKey == nil {
 			return true
 		}
 	}

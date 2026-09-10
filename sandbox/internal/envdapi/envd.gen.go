@@ -27,6 +27,51 @@ const (
 	File EntryInfoType = "file"
 )
 
+// CollapseResult Per-call statistics from a heap collapse
+type CollapseResult struct {
+	// AlreadyHuge Chunks MADV_COLLAPSE accepted but were already hugepages (no work)
+	AlreadyHuge *int `json:"alreadyHuge,omitempty"`
+
+	// Chunks 2 MiB chunks attempted
+	Chunks *int `json:"chunks,omitempty"`
+
+	// Collapsed Chunks whose base pages were actually migrated into a new hugepage (real work)
+	Collapsed *int `json:"collapsed,omitempty"`
+
+	// ElapsedMs Wall-clock time spent collapsing, in milliseconds
+	ElapsedMs *int64 `json:"elapsedMs,omitempty"`
+
+	// Regions Anonymous read-write regions scanned
+	Regions *int `json:"regions,omitempty"`
+
+	// Skipped Chunks that could not be collapsed (empty or ineligible)
+	Skipped *int `json:"skipped,omitempty"`
+}
+
+// Download defines model for Download.
+type Download struct {
+	// DestinationPath Absolute path inside the sandbox to save the downloaded file
+	DestinationPath string `json:"destinationPath"`
+
+	// Headers Optional HTTP request headers (e.g. Authorization) sent with both the probe and download requests
+	Headers *map[string]string `json:"headers,omitempty"`
+
+	// Mode Optional file permission bits (e.g. 420 for 0644). Defaults to 0644.
+	Mode *int `json:"mode,omitempty"`
+
+	// Overwrite If true, re-download and overwrite the destination even if it already exists. Defaults to false (skip if the destination already exists).
+	Overwrite *bool `json:"overwrite,omitempty"`
+
+	// TimeoutMs Optional timeout in milliseconds for this download. Defaults to 5 minutes.
+	TimeoutMs *int64 `json:"timeoutMs,omitempty"`
+
+	// URL HTTP(S) URL to download the file from
+	URL string `json:"url"`
+
+	// User Optional owner for the downloaded file (defaults to defaultUser)
+	User *string `json:"user,omitempty"`
+}
+
 // EntryInfo defines model for EntryInfo.
 type EntryInfo struct {
 	// Name Name of the file
@@ -187,6 +232,9 @@ type PostInitJSONBody struct {
 	// DefaultWorkdir The default working directory to use for operations
 	DefaultWorkdir *string `json:"defaultWorkdir,omitempty"`
 
+	// Downloads Files to download into the sandbox before mounts and post-init actions run. Sources that respond to HTTP range requests are downloaded via concurrent range requests; otherwise a single streamed request is used.
+	Downloads *[]Download `json:"downloads,omitempty"`
+
 	// EnvVars Environment variables to set
 	EnvVars *EnvVars `json:"envVars,omitempty"`
 
@@ -280,6 +328,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// PostCollapse request
+	PostCollapse(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetEnvs request
 	GetEnvs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -299,6 +350,18 @@ type ClientInterface interface {
 
 	// GetMetrics request
 	GetMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) PostCollapse(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostCollapseRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) GetEnvs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -383,6 +446,33 @@ func (c *Client) GetMetrics(ctx context.Context, reqEditors ...RequestEditorFn) 
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewPostCollapseRequest generates requests for PostCollapse
+func NewPostCollapseRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/collapse")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewGetEnvsRequest generates requests for GetEnvs
@@ -745,6 +835,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// PostCollapseWithResponse request
+	PostCollapseWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostCollapseResponse, error)
+
 	// GetEnvsWithResponse request
 	GetEnvsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetEnvsResponse, error)
 
@@ -764,6 +857,29 @@ type ClientWithResponsesInterface interface {
 
 	// GetMetricsWithResponse request
 	GetMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetricsResponse, error)
+}
+
+type PostCollapseResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CollapseResult
+	JSON500      *InternalServerError
+}
+
+// Status returns HTTPResponse.Status
+func (r PostCollapseResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostCollapseResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type GetEnvsResponse struct {
@@ -903,6 +1019,15 @@ func (r GetMetricsResponse) StatusCode() int {
 	return 0
 }
 
+// PostCollapseWithResponse request returning *PostCollapseResponse
+func (c *ClientWithResponses) PostCollapseWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostCollapseResponse, error) {
+	rsp, err := c.PostCollapse(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostCollapseResponse(rsp)
+}
+
 // GetEnvsWithResponse request returning *GetEnvsResponse
 func (c *ClientWithResponses) GetEnvsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetEnvsResponse, error) {
 	rsp, err := c.GetEnvs(ctx, reqEditors...)
@@ -963,6 +1088,39 @@ func (c *ClientWithResponses) GetMetricsWithResponse(ctx context.Context, reqEdi
 		return nil, err
 	}
 	return ParseGetMetricsResponse(rsp)
+}
+
+// ParsePostCollapseResponse parses an HTTP response from a PostCollapseWithResponse call
+func ParsePostCollapseResponse(rsp *http.Response) (*PostCollapseResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostCollapseResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CollapseResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalServerError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseGetEnvsResponse parses an HTTP response from a GetEnvsWithResponse call

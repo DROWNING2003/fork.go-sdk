@@ -96,6 +96,9 @@ type CreateTemplateParams struct {
 	// CPUCount 沙箱 CPU 核数。
 	CPUCount *int32
 
+	// DiskSizeMB 模板构建磁盘大小（MiB），最小值为 10240。
+	DiskSizeMB *int32
+
 	// MemoryMB 沙箱内存大小（MiB）。
 	MemoryMB *int32
 
@@ -111,12 +114,13 @@ type CreateTemplateParams struct {
 
 func (p *CreateTemplateParams) toAPI() apis.CreateTemplateV3JSONRequestBody {
 	return apis.CreateTemplateV3JSONRequestBody{
-		Alias:    p.Alias,
-		CPUCount: p.CPUCount,
-		MemoryMB: p.MemoryMB,
-		Name:     p.Name,
-		Tags:     p.Tags,
-		TeamID:   p.TeamID,
+		Alias:      p.Alias,
+		CPUCount:   p.CPUCount,
+		DiskSizeMB: p.DiskSizeMB,
+		MemoryMB:   p.MemoryMB,
+		Name:       p.Name,
+		Tags:       p.Tags,
+		TeamID:     p.TeamID,
 	}
 }
 

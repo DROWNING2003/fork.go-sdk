@@ -29,7 +29,9 @@ func TestSimpleAlwaysRetryInterceptor(t *testing.T) {
 		ShouldRetry: func(req *http.Request, resp *http.Response, err error) bool {
 			return true
 		},
-		Resolver: resolver.NewDefaultResolver(),
+		Resolver: resolver.NewResolver(func(context.Context, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("127.0.0.1")}, nil
+		}),
 		BeforeResolve: func(req *http.Request) {
 			callbackedCount += 1
 		},

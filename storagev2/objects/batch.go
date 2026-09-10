@@ -66,7 +66,6 @@ type (
 		operations                                                      [][]*operation
 		batchSize, minBatchSize, maxBatchSize, doublingFactor, maxTries uint
 		doublingInterval                                                time.Duration
-		ticker                                                          *time.Ticker
 		resetTicker                                                     chan struct{}
 		cancelTicker                                                    internal_context.CancelCauseFunc
 		lastDecreaseBatchSizeTime                                       time.Time
@@ -185,7 +184,6 @@ func newRequestsManager(storage *apis.Storage, initBatchSize, minBatchSize, maxB
 		maxBatchSize:     maxBatchSize,
 		doublingFactor:   doublingFactor,
 		doublingInterval: doublingInterval,
-		ticker:           time.NewTicker(doublingInterval),
 		resetTicker:      make(chan struct{}, 1024),
 		cancelTicker:     cancelFunc,
 	}
@@ -198,12 +196,14 @@ func newRequestsManager(storage *apis.Storage, initBatchSize, minBatchSize, maxB
 
 func (rm *requestsManager) asyncLoop(ctx internal_context.Context) {
 	defer rm.waitGroup.Done()
+	ticker := time.NewTicker(rm.doublingInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-rm.resetTicker:
-			// do nothing
-		case <-rm.ticker.C:
+			ticker.Reset(rm.doublingInterval)
+		case <-ticker.C:
 			rm.increaseBatchSize()
 		case <-ctx.Done():
 			return
@@ -213,7 +213,6 @@ func (rm *requestsManager) asyncLoop(ctx internal_context.Context) {
 
 func (rm *requestsManager) done() {
 	rm.cancelTicker(nil)
-	rm.ticker.Stop()
 	rm.waitGroup.Wait()
 }
 
@@ -278,9 +277,10 @@ func (rm *requestsManager) decreaseBatchSize() {
 		batchSize = rm.minBatchSize
 	}
 	rm.batchSize = batchSize
-	rm.ticker.Stop()
-	rm.ticker = time.NewTicker(rm.doublingInterval)
-	rm.resetTicker <- struct{}{}
+	select {
+	case rm.resetTicker <- struct{}{}:
+	default:
+	}
 }
 
 func (rm *requestsManager) increaseBatchSize() {

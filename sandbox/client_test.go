@@ -47,6 +47,8 @@ type mockAPI struct {
 	getTemplateByAliasFn       func(ctx context.Context, alias string, editors ...apis.RequestEditorFn) (*apis.GetTemplateByAliasResponse, error)
 }
 
+var _ apis.ClientWithResponsesInterface = (*mockAPI)(nil)
+
 func httpResponse(statusCode int) *http.Response {
 	return &http.Response{StatusCode: statusCode, Header: http.Header{}}
 }
@@ -144,6 +146,18 @@ func (m *mockAPI) RefreshSandboxWithResponse(ctx context.Context, sandboxID apis
 }
 
 func (m *mockAPI) RefreshSandboxWithBodyWithResponse(ctx context.Context, sandboxID apis.SandboxID, contentType string, body io.Reader, editors ...apis.RequestEditorFn) (*apis.RefreshSandboxResponse, error) {
+	panic("not implemented")
+}
+
+func (m *mockAPI) GetSandboxResourcesWithResponse(ctx context.Context, sandboxID apis.SandboxID, editors ...apis.RequestEditorFn) (*apis.GetSandboxResourcesResponse, error) {
+	panic("not implemented")
+}
+
+func (m *mockAPI) PatchSandboxResourceWithBodyWithResponse(ctx context.Context, sandboxID apis.SandboxID, resourceID string, contentType string, body io.Reader, editors ...apis.RequestEditorFn) (*apis.PatchSandboxResourceResponse, error) {
+	panic("not implemented")
+}
+
+func (m *mockAPI) PatchSandboxResourceWithResponse(ctx context.Context, sandboxID apis.SandboxID, resourceID string, body apis.PatchSandboxResourceJSONRequestBody, editors ...apis.RequestEditorFn) (*apis.PatchSandboxResourceResponse, error) {
 	panic("not implemented")
 }
 
@@ -1592,6 +1606,14 @@ func TestCreateTemplate(t *testing.T) {
 	}
 }
 
+func TestCreateTemplateParamsToAPIForwardsDiskSizeMB(t *testing.T) {
+	diskSize := int32(10240)
+	body := (&CreateTemplateParams{DiskSizeMB: &diskSize}).toAPI()
+	if body.DiskSizeMB == nil || *body.DiskSizeMB != diskSize {
+		t.Fatalf("DiskSizeMB not forwarded: %v", body.DiskSizeMB)
+	}
+}
+
 func TestCreateTemplateError(t *testing.T) {
 	mock := &mockAPI{
 		createTemplateV3Fn: func(ctx context.Context, body apis.CreateTemplateV3JSONRequestBody, editors ...apis.RequestEditorFn) (*apis.CreateTemplateV3Response, error) {
@@ -2265,6 +2287,43 @@ func TestCreate_KodoResourceWithoutCredentials(t *testing.T) {
 	// Should get the "credentials not provided" message from GetCredentialsOption
 	if !strings.Contains(err.Error(), "credentials not provided") {
 		t.Errorf("expected 'credentials not provided', got: %v", err)
+	}
+}
+
+func TestCreate_KodoResourceWithInlineCredentials(t *testing.T) {
+	accessKey := "test-ak"
+	envdAccessToken := "envd-token"
+	secretKey := "test-sk"
+	mock := &mockAPI{
+		createSandboxFn: func(_ context.Context, _ *apis.CreateSandboxParams, body apis.CreateSandboxJSONRequestBody, _ ...apis.RequestEditorFn) (*apis.CreateSandboxResponse, error) {
+			if body.Resources == nil || len(*body.Resources) != 1 {
+				t.Fatalf("unexpected resources: %#v", body.Resources)
+			}
+			resource, err := (*body.Resources)[0].AsKodoResource()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resource.AccessKey == nil || *resource.AccessKey != accessKey || resource.SecretKey == nil || *resource.SecretKey != secretKey {
+				t.Fatalf("unexpected Kodo credentials: %#v", resource)
+			}
+			return &apis.CreateSandboxResponse{
+				HTTPResponse: httpResponse(http.StatusCreated),
+				JSON201:      &apis.Sandbox{SandboxID: "sandbox-1", TemplateID: "template-1", EnvdAccessToken: &envdAccessToken},
+			}, nil
+		},
+	}
+	c := newTestClient(mock)
+	c.config.Credentials = nil
+	if _, err := c.Create(context.Background(), CreateParams{
+		TemplateID: "template-1",
+		Resources: &[]SandboxResourceSpec{{Kodo: &KodoResource{
+			AccessKey: &accessKey,
+			Bucket:    "test-bucket",
+			MountPath: "/mnt/kodo",
+			SecretKey: &secretKey,
+		}}},
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
