@@ -43,13 +43,13 @@ func main() {
 
 	// 2. 暂停沙箱
 	fmt.Println("正在暂停沙箱...")
-	if err := sb.Pause(ctx); err != nil {
+	if err := c.Pause(ctx, sb.ID()); err != nil {
 		log.Fatalf("暂停失败: %v", err)
 	}
 	fmt.Println("沙箱已暂停")
 
 	// 3. 确认状态
-	detail, err := sb.GetInfo(ctx)
+	detail, err := c.GetInfo(ctx, sb.ID())
 	if err != nil {
 		log.Fatalf("获取详情失败: %v", err)
 	}
@@ -65,14 +65,14 @@ func main() {
 	}
 
 	// 等待恢复就绪
-	readyInfo, err := resumed.WaitForReady(ctx, sandbox.WithPollInterval(2*time.Second))
+	readyInfo, err := c.WaitForReady(ctx, resumed.ID(), sandbox.WithPollInterval(2*time.Second))
 	if err != nil {
 		log.Fatalf("等待就绪失败: %v", err)
 	}
 	fmt.Printf("沙箱已恢复: %s (状态: %s)\n", resumed.ID(), readyInfo.State)
 
 	// 5. 清理
-	if err := resumed.Kill(ctx); err != nil {
+	if err := c.Kill(ctx, resumed.ID()); err != nil {
 		log.Fatalf("终止失败: %v", err)
 	}
 	fmt.Println("沙箱已终止")

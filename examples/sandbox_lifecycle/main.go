@@ -72,14 +72,14 @@ func main() {
 	fmt.Printf("是否运行中: %v\n", running)
 
 	// 5. 更新超时时间
-	if err := sb.SetTimeout(ctx, 5*time.Minute); err != nil {
+	if err := c.SetTimeout(ctx, sb.ID(), 5*time.Minute); err != nil {
 		log.Fatalf("更新超时失败: %v", err)
 	}
 	fmt.Println("超时时间已更新为 5 分钟")
 
 	// 6. 延长存活时间（Refresh）
 	duration := 300
-	if err := sb.Refresh(ctx, sandbox.RefreshParams{
+	if err := c.Refresh(ctx, sb.ID(), sandbox.RefreshParams{
 		Duration: &duration,
 	}); err != nil {
 		log.Fatalf("Refresh 失败: %v", err)
@@ -87,7 +87,7 @@ func main() {
 	fmt.Println("沙箱存活时间已延长 300 秒")
 
 	// 7. 终止沙箱
-	if err := sb.Kill(ctx); err != nil {
+	if err := c.Kill(ctx, sb.ID()); err != nil {
 		log.Fatalf("终止沙箱失败: %v", err)
 	}
 	fmt.Printf("沙箱 %s 已终止\n", sb.ID())

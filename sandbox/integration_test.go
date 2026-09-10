@@ -129,7 +129,7 @@ func TestIntegrationSandboxLifecycle(t *testing.T) {
 		}
 		killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer killCancel()
-		if err := sb.Kill(killCtx); err != nil {
+		if err := c.Kill(killCtx, sb.ID()); err != nil {
 			t.Logf("清理沙箱 %s 失败: %v", sb.ID(), err)
 		} else {
 			t.Logf("沙箱 %s 已清理", sb.ID())
@@ -146,7 +146,7 @@ func TestIntegrationSandboxLifecycle(t *testing.T) {
 	}
 
 	// 4. 获取详细信息
-	detail, err := sb.GetInfo(ctx)
+	detail, err := c.GetInfo(ctx, sb.ID())
 	if err != nil {
 		t.Fatalf("GetInfo 失败: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestIntegrationSandboxLifecycle(t *testing.T) {
 		detail.State, detail.TemplateID, detail.CPUCount, detail.MemoryMB)
 
 	// 5. 更新超时时间
-	if err := sb.SetTimeout(ctx, 120*time.Second); err != nil {
+	if err := c.SetTimeout(ctx, sb.ID(), 120*time.Second); err != nil {
 		t.Fatalf("SetTimeout 失败: %v", err)
 	}
 	t.Log("超时时间已更新为 120s")
@@ -176,7 +176,7 @@ func TestIntegrationSandboxLifecycle(t *testing.T) {
 	}
 
 	// 7. 终止沙箱
-	if err := sb.Kill(ctx); err != nil {
+	if err := c.Kill(ctx, sb.ID()); err != nil {
 		t.Fatalf("Kill 失败: %v", err)
 	}
 	killed = true
@@ -215,7 +215,7 @@ func createTestSandbox(t *testing.T, c *Client, ctx context.Context) *Sandbox {
 	t.Cleanup(func() {
 		killCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := sb.Kill(killCtx); err != nil {
+		if err := c.Kill(killCtx, sb.ID()); err != nil {
 			t.Logf("清理沙箱 %s 失败: %v", sb.ID(), err)
 		}
 	})
@@ -944,12 +944,12 @@ func TestIntegrationMetadata(t *testing.T) {
 	t.Cleanup(func() {
 		killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer killCancel()
-		if err := sb.Kill(killCtx); err != nil {
+		if err := c.Kill(killCtx, sb.ID()); err != nil {
 			t.Logf("清理沙箱 %s 失败: %v", sb.ID(), err)
 		}
 	})
 
-	info, err := sb.GetInfo(ctx)
+	info, err := c.GetInfo(ctx, sb.ID())
 	if err != nil {
 		t.Fatalf("GetInfo 失败: %v", err)
 	}
@@ -1000,7 +1000,7 @@ func TestIntegrationCreateIdempotencyRetry(t *testing.T) {
 		t.Fatalf("Create（自动幂等键）失败: %v", err)
 	}
 	t.Logf("沙箱1（自动幂等键）: %s", sb1.ID())
-	defer killSandbox(t, sb1)
+	defer killSandbox(t, c, sb1)
 
 	// 2. 使用相同的自定义幂等键创建两次，应返回同一沙箱
 	idempotencyKey := "sdk-test-key-" + time.Now().Format("20060102-150405")
@@ -1013,7 +1013,7 @@ func TestIntegrationCreateIdempotencyRetry(t *testing.T) {
 		t.Fatalf("Create（幂等键首次）失败: %v", err)
 	}
 	t.Logf("沙箱2（幂等键 %s）: %s", idempotencyKey, sb2.ID())
-	defer killSandbox(t, sb2)
+	defer killSandbox(t, c, sb2)
 
 	sb3, err := c.Create(ctx, CreateParams{
 		TemplateID:     templateID,
@@ -1026,18 +1026,18 @@ func TestIntegrationCreateIdempotencyRetry(t *testing.T) {
 	t.Logf("沙箱3（幂等键 %s）: %s", idempotencyKey, sb3.ID())
 
 	if sb2.ID() != sb3.ID() {
-		defer killSandbox(t, sb3)
+		defer killSandbox(t, c, sb3)
 		t.Errorf("幂等重试应返回同一沙箱: sb2=%s, sb3=%s", sb2.ID(), sb3.ID())
 	} else {
 		t.Logf("幂等重试验证通过: sb2=sb3=%s", sb2.ID())
 	}
 }
 
-func killSandbox(t *testing.T, sb *Sandbox) {
+func killSandbox(t *testing.T, c *Client, sb *Sandbox) {
 	t.Helper()
 	killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer killCancel()
-	if err := sb.Kill(killCtx); err != nil {
+	if err := c.Kill(killCtx, sb.ID()); err != nil {
 		t.Logf("清理沙箱 %s 失败: %v", sb.ID(), err)
 	} else {
 		t.Logf("沙箱 %s 已清理", sb.ID())

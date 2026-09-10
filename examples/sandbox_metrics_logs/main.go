@@ -41,7 +41,7 @@ func main() {
 	}
 	fmt.Printf("沙箱已就绪: %s\n", sb.ID())
 	defer func() {
-		_ = sb.Kill(context.Background())
+		_ = c.Kill(context.Background(), sb.ID())
 		fmt.Println("沙箱已终止")
 	}()
 
@@ -50,7 +50,7 @@ func main() {
 	time.Sleep(5 * time.Second)
 
 	// 2. 获取指标
-	metrics, err := sb.GetMetrics(ctx, nil)
+	metrics, err := c.GetMetrics(ctx, sb.ID(), nil)
 	if err != nil {
 		log.Fatalf("获取指标失败: %v", err)
 	}
@@ -61,7 +61,7 @@ func main() {
 	}
 
 	// 3. 获取日志
-	logs, err := sb.GetLogs(ctx, nil)
+	logs, err := c.GetLogs(ctx, sb.ID(), nil)
 	if err != nil {
 		fmt.Printf("\n获取日志失败（服务端可能暂不支持）: %v\n", err)
 	} else {

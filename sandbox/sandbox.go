@@ -455,48 +455,6 @@ func (c *Client) WaitForReady(ctx context.Context, sandboxID string, opts ...Pol
 	})
 }
 
-// GetInjections 返回沙箱当前的运行时请求注入规则。
-// 响应中的密钥、令牌和 Header 等敏感字段由服务端脱敏。
-// 返回值不能直接用于 UpdateInjections；更新时必须提供包含真实敏感值的新配置。
-func (s *Sandbox) GetInjections(ctx context.Context) ([]MaskedSandboxInjection, error) {
-	return s.client.GetInjections(ctx, s.sandboxID)
-}
-
-// UpdateInjections 替换沙箱的全部运行时请求注入规则。
-// 变更会立即应用于新的出站 HTTPS 连接。
-func (s *Sandbox) UpdateInjections(ctx context.Context, injections []SandboxInjectionSpec) error {
-	return s.client.UpdateInjections(ctx, s.sandboxID, injections)
-}
-
-// UpdateGitHubToken 更新沙箱使用的 GitHub 授权令牌。
-func (s *Sandbox) UpdateGitHubToken(ctx context.Context, authorizationToken string) error {
-	return s.client.UpdateGitHubToken(ctx, s.sandboxID, authorizationToken)
-}
-
-// GetResources 返回沙箱已挂载的资源配置。
-// 响应中的访问密钥和授权令牌等敏感字段由服务端脱敏。
-func (s *Sandbox) GetResources(ctx context.Context) ([]SandboxResourceInfo, error) {
-	return s.client.GetResources(ctx, s.sandboxID)
-}
-
-// UpdateGitRepositoryResourceToken 更新指定 Git 仓库资源的授权令牌。
-// 对正在运行的沙箱，新令牌会立即应用到对应的 GitHub 注入配置。
-func (s *Sandbox) UpdateGitRepositoryResourceToken(ctx context.Context, resourceID, authorizationToken string) error {
-	return s.client.UpdateGitRepositoryResourceToken(ctx, s.sandboxID, resourceID, authorizationToken)
-}
-
-// Kill 终止沙箱。
-func (s *Sandbox) Kill(ctx context.Context) error {
-	return s.client.Kill(ctx, s.sandboxID)
-}
-
-// SetTimeout 更新沙箱超时时间。
-// 沙箱将在从现在起经过指定时长后过期。
-// timeout 必须 >= 1 秒。
-func (s *Sandbox) SetTimeout(ctx context.Context, timeout time.Duration) error {
-	return s.client.SetTimeout(ctx, s.sandboxID, timeout)
-}
-
 // refreshEnvdToken 通过 GetSandbox API 获取 envdAccessToken 并更新到当前实例。
 // 调用者必须确保已持有 envdTokenMu 的写锁或在初始化阶段调用。
 func (s *Sandbox) refreshEnvdToken(ctx context.Context) error {
@@ -512,11 +470,6 @@ func (s *Sandbox) refreshEnvdToken(ctx context.Context) error {
 	s.envdTokenLoaded = true
 	s.envdTokenMu.Unlock()
 	return nil
-}
-
-// GetInfo 返回沙箱的详细信息。
-func (s *Sandbox) GetInfo(ctx context.Context) (*SandboxInfo, error) {
-	return s.client.GetInfo(ctx, s.sandboxID)
 }
 
 // IsRunning 通过探测 envd /health 端点检查沙箱是否正在运行且可用。
@@ -543,39 +496,13 @@ func (s *Sandbox) IsRunning(ctx context.Context) (bool, error) {
 	return false, newAPIError(resp, nil)
 }
 
-// GetMetrics 返回沙箱的资源指标。
-func (s *Sandbox) GetMetrics(ctx context.Context, params *GetMetricsParams) ([]SandboxMetric, error) {
-	return s.client.GetMetrics(ctx, s.sandboxID, params)
-}
-
-// GetLogs 返回沙箱日志。
-func (s *Sandbox) GetLogs(ctx context.Context, params *GetLogsParams) (*SandboxLogs, error) {
-	return s.client.GetLogs(ctx, s.sandboxID, params)
-}
-
-// Pause 暂停沙箱，以便后续恢复。
-func (s *Sandbox) Pause(ctx context.Context) error {
-	return s.client.Pause(ctx, s.sandboxID)
-}
-
-// Refresh 延长沙箱的存活时间。
-func (s *Sandbox) Refresh(ctx context.Context, params RefreshParams) error {
-	return s.client.Refresh(ctx, s.sandboxID, params)
-}
-
-// WaitForReady 轮询 GetInfo 直到沙箱状态变为 "running" 或上下文被取消。
-// 默认轮询间隔为 1 秒，可通过 WithPollInterval 等选项自定义。
-func (s *Sandbox) WaitForReady(ctx context.Context, opts ...PollOption) (*SandboxInfo, error) {
-	return s.client.WaitForReady(ctx, s.sandboxID, opts...)
-}
-
 // CreateAndWait 创建沙箱并等待其就绪。
 func (c *Client) CreateAndWait(ctx context.Context, params CreateParams, opts ...PollOption) (*Sandbox, *SandboxInfo, error) {
 	sb, err := c.Create(ctx, params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create sandbox: %w", err)
 	}
-	info, err := sb.WaitForReady(ctx, opts...)
+	info, err := c.WaitForReady(ctx, sb.ID(), opts...)
 	if err != nil {
 		return nil, nil, err
 	}
