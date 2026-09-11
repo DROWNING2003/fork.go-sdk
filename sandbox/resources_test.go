@@ -58,6 +58,9 @@ func TestClientGetResources(t *testing.T) {
 	if len(resources) != 1 || resources[0].GitRepository == nil {
 		t.Fatalf("unexpected resources: %#v", resources)
 	}
+	if resources[0].GitRepository.ResourceID != "res_123" {
+		t.Fatalf("unexpected Git resource: %#v", resources[0].GitRepository)
+	}
 }
 
 func TestClientUpdateGitRepositoryResourceToken(t *testing.T) {

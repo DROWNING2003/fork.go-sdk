@@ -118,6 +118,7 @@
 //   - [Client.UpdateTemplate] / [Client.DeleteTemplate]: 更新和删除模板
 //   - [Client.StartTemplateBuild] / [Client.WaitForBuild]: 启动构建并等待完成
 //   - [Client.GetTemplateBuildStatus] / [Client.GetTemplateBuildLogs]: 查询构建状态和日志
+//   - [Client.GetTemplateFiles]: 获取模板构建文件的上传链接
 //   - [Client.AssignTemplateTags] / [Client.DeleteTemplateTags]: 管理模板标签
 //   - [Client.GetTemplateByAlias]: 通过别名查找模板
 //

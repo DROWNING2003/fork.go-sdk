@@ -1,4 +1,19 @@
 # Changelog
+## 7.28.9
+
+* 破坏性变更（Breaking Change）
+  * sandbox: 通过 `Client` 和沙箱 ID 统一管理沙箱状态、资源及生命周期。以下方法从 `Sandbox` 移至 `Client`：`GetInfo`、`GetMetrics`、`GetLogs`、`Kill`、`Pause`、`Refresh`、`WaitForReady`、`SetTimeout`、`GetInjections`、`UpdateInjections`、`UpdateGitHubToken`、`GetResources` 和 `UpdateGitRepositoryResourceToken`。
+  * 升级时需更新上述方法的调用：将接收者 `sb` 改为 `client`，在 `ctx` 后增加沙箱 ID，其余参数保持原顺序。例如：
+    * `sb.GetInfo(ctx)` → `client.GetInfo(ctx, sb.ID())`
+    * `sb.Kill(ctx)` → `client.Kill(ctx, sb.ID())`
+    * `sb.WaitForReady(ctx, opts...)` → `client.WaitForReady(ctx, sb.ID(), opts...)`
+    * `sb.GetMetrics(ctx, params)` → `client.GetMetrics(ctx, sb.ID(), params)`
+    * `sb.UpdateGitRepositoryResourceToken(ctx, resourceID, token)` → `client.UpdateGitRepositoryResourceToken(ctx, sb.ID(), resourceID, token)`
+  * `Sandbox` 提供实例操作，包括 `IsRunning`、文件操作、命令执行、PTY、Git 操作及 URL 生成。
+
+* 完善
+  * sandbox: 补充模板构建文件上传链接 API 的文档。
+
 ## 7.28.0
 
 * 新增
