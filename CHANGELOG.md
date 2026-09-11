@@ -1,5 +1,5 @@
 # Changelog
-## 7.28.9
+## 7.28.1
 
 * 新增
   * sandbox: `Client` 支持通过沙箱 ID 调用 `GetInfo`、`GetMetrics`、`GetLogs`、`Kill`、`Pause`、`Refresh`、`WaitForReady`、`SetTimeout`、`GetInjections`、`UpdateInjections`、`UpdateGitHubToken`、`GetResources` 和 `UpdateGitRepositoryResourceToken`。
