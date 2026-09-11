@@ -106,7 +106,7 @@ func run(ctx context.Context, client *sandbox.Client) error {
 	}
 	defer func() {
 		log.Println("Killing sandbox...")
-		if err := client.Kill(ctx, sb.ID()); err != nil {
+		if err := sb.Kill(ctx); err != nil {
 			log.Printf("Failed to kill sandbox: %v", err)
 		}
 	}()
@@ -114,7 +114,7 @@ func run(ctx context.Context, client *sandbox.Client) error {
 	log.Printf("Sandbox created successfully! ID: %s, State: %s\n", sb.ID(), info.State)
 
 	// 查询当前运行时注入。敏感字段由服务端脱敏，返回值不能直接用于更新。
-	current, err := client.GetInjections(ctx, sb.ID())
+	current, err := sb.GetInjections(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get runtime injections: %w", err)
 	}
@@ -147,10 +147,10 @@ func run(ctx context.Context, client *sandbox.Client) error {
 			Github: &sandbox.GithubInjection{Token: &githubToken},
 		})
 	}
-	if err := client.UpdateInjections(ctx, sb.ID(), updatedInjections); err != nil {
+	if err := sb.UpdateInjections(ctx, updatedInjections); err != nil {
 		return fmt.Errorf("failed to update runtime injections: %w", err)
 	}
-	current, err = client.GetInjections(ctx, sb.ID())
+	current, err = sb.GetInjections(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get updated runtime injections: %w", err)
 	}
@@ -164,7 +164,7 @@ func run(ctx context.Context, client *sandbox.Client) error {
 		if githubToken == "" {
 			return fmt.Errorf("设置 QINIU_GITHUB_TOKEN_UPDATED 时也必须设置 QINIU_GITHUB_TOKEN")
 		}
-		if err := client.UpdateGitHubToken(ctx, sb.ID(), updatedGitHubToken); err != nil {
+		if err := sb.UpdateGitHubToken(ctx, updatedGitHubToken); err != nil {
 			return fmt.Errorf("failed to update GitHub token: %w", err)
 		}
 		log.Println("GitHub token updated successfully")

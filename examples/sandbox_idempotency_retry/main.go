@@ -50,7 +50,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("第一次创建失败: %w", err)
 	}
-	defer cleanupSandbox(c, sb1)
+	defer cleanupSandbox(sb1)
 	fmt.Printf("第一次创建: %s\n", sb1.ID())
 
 	// 第二次创建 — 同一幂等键，应返回同一沙箱
@@ -63,7 +63,7 @@ func run() error {
 		return fmt.Errorf("第二次创建失败: %w", err)
 	}
 	if sb2.ID() != sb1.ID() {
-		defer cleanupSandbox(c, sb2)
+		defer cleanupSandbox(sb2)
 	}
 	fmt.Printf("第二次创建: %s\n", sb2.ID())
 
@@ -76,10 +76,10 @@ func run() error {
 	return nil
 }
 
-func cleanupSandbox(c *sandbox.Client, sb *sandbox.Sandbox) {
+func cleanupSandbox(sb *sandbox.Sandbox) {
 	killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer killCancel()
-	if err := c.Kill(killCtx, sb.ID()); err != nil {
+	if err := sb.Kill(killCtx); err != nil {
 		log.Printf("清理沙箱 %s 失败: %v", sb.ID(), err)
 		return
 	}

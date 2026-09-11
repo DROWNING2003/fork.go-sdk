@@ -153,7 +153,7 @@ func main() {
 	}
 	defer func() {
 		fmt.Println("\n=== 销毁沙箱 ===")
-		_ = c.Kill(context.Background(), sb.ID())
+		_ = sb.Kill(context.Background())
 		fmt.Println("沙箱已销毁")
 	}()
 	fmt.Printf("沙箱已创建: ID=%s, 状态=%s\n", sb.ID(), info.State)

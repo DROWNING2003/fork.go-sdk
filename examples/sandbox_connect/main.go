@@ -77,7 +77,7 @@ func main() {
 		defer func() {
 			killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer killCancel()
-			if err := c.Kill(killCtx, created.ID()); err != nil {
+			if err := created.Kill(killCtx); err != nil {
 				log.Printf("终止沙箱失败: %v", err)
 			} else {
 				fmt.Printf("沙箱 %s 已终止\n", sandboxID)
@@ -96,7 +96,7 @@ func main() {
 	fmt.Printf("已连接到沙箱: %s (模板: %s)\n", sb.ID(), sb.TemplateID())
 
 	// 获取沙箱详情
-	info, err := c.GetInfo(ctx, sb.ID())
+	info, err := sb.GetInfo(ctx)
 	if err != nil {
 		log.Fatalf("获取详情失败: %v", err)
 	}

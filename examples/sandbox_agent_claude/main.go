@@ -83,7 +83,7 @@ func main() {
 	defer func() {
 		killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer killCancel()
-		if err := c.Kill(killCtx, sb.ID()); err != nil {
+		if err := sb.Kill(killCtx); err != nil {
 			log.Printf("终止沙箱失败: %v", err)
 		} else {
 			fmt.Printf("\n沙箱 %s 已终止\n", sb.ID())
