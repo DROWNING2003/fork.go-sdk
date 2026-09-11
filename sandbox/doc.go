@@ -27,7 +27,7 @@
 //	    Timeout:    &timeout,
 //	}, sandbox.WithPollInterval(2*time.Second))
 //
-//	defer c.Kill(ctx, sb.ID())
+//	defer sb.Kill(ctx)
 //
 // # 沙箱生命周期
 //
@@ -46,7 +46,15 @@
 //
 // Sandbox 实例提供与已创建实例相关的操作:
 //
+//   - [Sandbox.GetInfo] / [Sandbox.GetInjections] / [Sandbox.GetResources]: 查询状态和配置
+//   - [Sandbox.GetMetrics] / [Sandbox.GetLogs]: 查询运行数据
+//   - [Sandbox.UpdateInjections] / [Sandbox.UpdateGitHubToken] / [Sandbox.UpdateGitRepositoryResourceToken]: 更新注入规则和令牌
+//   - [Sandbox.Kill] / [Sandbox.Pause] / [Sandbox.SetTimeout] / [Sandbox.Refresh]: 管理状态和存活时间
+//   - [Sandbox.WaitForReady]: 轮询等待就绪
 //   - [Sandbox.IsRunning]: 通过 envd /health 端点检查沙箱是否可用
+//
+// 实例的控制面方法自动传入自身 ID，委托给对应的 Client 方法。
+// 例如 sb.UpdateGitHubToken(ctx, token) 与 c.UpdateGitHubToken(ctx, sb.ID(), token) 使用相同实现。
 //
 // # 命令执行
 //
